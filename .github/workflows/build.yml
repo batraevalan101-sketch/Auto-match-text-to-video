@@ -1,0 +1,87 @@
+name: Build APK
+on: [push, workflow_dispatch]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate project files
+        run: |
+          mkdir -p app/src/main/java/com/example/dubber
+          mv Dubber.kt MainActivity.kt app/src/main/java/com/example/dubber/
+          rm -f AndroidManifest.xml app-build.gradle.kts build.gradle build.gradle.kts settings.gradle settings.gradle.kts
+          cat > settings.gradle.kts <<'EOT'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositories { google(); mavenCentral() } }
+          rootProject.name = "Dubber"
+          include(":app")
+          EOT
+          cat > build.gradle.kts <<'EOT'
+          plugins {
+              id("com.android.application") version "8.7.3" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+              id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
+          }
+          EOT
+          printf 'android.useAndroidX=true\norg.gradle.jvmargs=-Xmx3g\n' > gradle.properties
+          cat > app/build.gradle.kts <<'EOT'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+              id("org.jetbrains.kotlin.plugin.compose")
+          }
+          android {
+              namespace = "com.example.dubber"
+              compileSdk = 35
+              defaultConfig {
+                  applicationId = "com.example.dubber"
+                  minSdk = 29
+                  targetSdk = 35
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = "17" }
+              buildFeatures { compose = true }
+          }
+          dependencies {
+              implementation(platform("androidx.compose:compose-bom:2024.10.01"))
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.foundation:foundation")
+              implementation("androidx.compose.material3:material3")
+              implementation("androidx.activity:activity-compose:1.9.3")
+              implementation("androidx.media3:media3-transformer:1.5.1")
+              implementation("androidx.media3:media3-common:1.5.1")
+              implementation("androidx.media3:media3-effect:1.5.1")
+              implementation("com.squareup.okhttp3:okhttp:4.12.0")
+          }
+          EOT
+          cat > app/src/main/AndroidManifest.xml <<'EOT'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <application android:label="Dubber" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOT
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+      - run: gradle assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dubber-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
