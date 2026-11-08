@@ -9,14 +9,14 @@ import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.media3.common.MediaItem
-import androidx.media3.common.audio.Sonic
 import androidx.media3.transformer.*
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.ShortBuffer
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.roundToInt
 
 data class Cue(val startMs: Long, val endMs: Long, val text: String)
 data class Seg(val s: Long, val e: Long)
@@ -195,15 +195,45 @@ private fun groupSegs(segs: List<Seg>, n: Int): List<Seg> {
     return out
 }
 
-@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-private fun stretch(pcm: ShortArray, rate: Int, speed: Float): ShortArray {
-    if (abs(speed - 1f) < 0.02f) return pcm
-    val s = Sonic(rate, 1, speed, 1f, rate)
-    s.queueInput(ShortBuffer.wrap(pcm))
-    s.queueEndOfStream()
-    val out = ShortBuffer.allocate(s.outputSize / 2)
-    s.getOutput(out)
-    return out.array().copyOf(out.position())
+/** Pitch-preserving time stretch (WSOLA). speed > 1 = faster. */
+private fun stretch(x: ShortArray, rate: Int, speed: Float): ShortArray {
+    if (abs(speed - 1f) < 0.02f || x.size < 4000) return x
+    val win = rate * 30 / 1000 / 2 * 2
+    val hopS = win / 2
+    val hopA = (hopS * speed).roundToInt()
+    val seek = rate * 8 / 1000
+    val outLen = (x.size / speed).toInt()
+    val out = FloatArray(outLen + 2 * win)
+    val w = FloatArray(win) { (0.5 - 0.5 * cos(2.0 * Math.PI * it / win)).toFloat() }
+    var prev = 0
+    var k = 0
+    while (k * hopS < outLen) {
+        val outPos = k * hopS
+        var p = 0
+        if (k > 0) {
+            val target = k * hopA
+            val lo = (target - seek).coerceAtLeast(0)
+            val hi = (target + seek).coerceAtMost(x.size - win)
+            if (hi < lo) break
+            val tpl = prev + hopS
+            p = target.coerceIn(lo, hi)
+            if (tpl + win <= x.size) {
+                var bestC = Long.MIN_VALUE
+                var c = lo
+                while (c <= hi) {
+                    var s = 0L
+                    var i = 0
+                    while (i < win) { s += x[tpl + i] * x[c + i]; i += 2 }
+                    if (s > bestC) { bestC = s; p = c }
+                    c += 2
+                }
+            }
+        }
+        for (i in 0 until win) out[outPos + i] += x[p + i].toFloat() * w[i]
+        prev = p
+        k++
+    }
+    return ShortArray(outLen) { out[it].roundToInt().coerceIn(-32768, 32767).toShort() }
 }
 
 /** Finds phrases in the voiceover and fits each one into its subtitle slot. */
