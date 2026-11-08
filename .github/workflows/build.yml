@@ -9,6 +9,12 @@ jobs:
         run: |
           mkdir -p app/src/main/java/com/example/dubber
           mv Dubber.kt MainActivity.kt app/src/main/java/com/example/dubber/
+          mkdir -p app/src/main/assets
+          for u in https://raw.githubusercontent.com/snakers4/silero-vad/v5.1.2/src/silero_vad/data/silero_vad.onnx https://raw.githubusercontent.com/snakers4/silero-vad/master/src/silero_vad/data/silero_vad.onnx; do
+            curl -fsSL "$u" -o app/src/main/assets/silero_vad.onnx && break
+            rm -f app/src/main/assets/silero_vad.onnx
+          done
+          ls -la app/src/main/assets
           rm -f AndroidManifest.xml app-build.gradle.kts build.gradle build.gradle.kts settings.gradle settings.gradle.kts
           cat > settings.gradle.kts <<'EOT'
           pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
@@ -56,7 +62,7 @@ jobs:
               implementation("androidx.media3:media3-transformer:1.5.1")
               implementation("androidx.media3:media3-common:1.5.1")
               implementation("androidx.media3:media3-effect:1.5.1")
-              implementation("com.squareup.okhttp3:okhttp:4.12.0")
+              implementation("com.microsoft.onnxruntime:onnxruntime-android:1.19.2")
           }
           EOT
           cat > app/src/main/AndroidManifest.xml <<'EOT'
